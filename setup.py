@@ -23,13 +23,13 @@ setuptools.setup(
     include_package_data=True,
     entry_points="""
         [console_scripts]
-        nocopy=nocopy.cli:cli
+        nocopy=cli.cli:cli
     """,
     install_requires=[
         "click==8.0.1",
-        "pydantic==1.8.2",
-        "python-Levenshtein==0.12.0",
-        "nocopy==0.1.5",
+        "pyyaml==5.4.1",
+        "python-Levenshtein==0.12.1",
+        "nocopy==0.1.0",
         "thefuzz==0.19.0",
     ]
 )
