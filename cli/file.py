@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
+import yaml
 
 
 class StdInNotSupported(Exception):
@@ -60,6 +61,21 @@ class FormatNotAscertainable(Exception):
     def __init__(self, file: Path):
         super().__init__(
             f"file '{file}' with extension {file.suffix} is not supported"
+        )
+
+
+class DifferentInOutFormats(Exception):
+    """
+    Raised when the given input path has another file suffix than the output
+    path. This is a hypothetical edge case which has no real-life implication
+    as the application currently never uses a input and a output file at the
+    same time.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "file extension of input file doesn't match it's counterpart of "
+            "the output file"
         )
 
 
@@ -205,11 +221,11 @@ class Yaml(File):
 
     @staticmethod
     def parse(raw: bytes) -> Dict[str, Any]:
-        raise NotImplementedError()
+        return yaml.load(raw, Loader=yaml.FullLoader)
 
     @staticmethod
     def dump(data: Dict[str, Any]) -> bytes:
-        raise NotImplementedError()
+        return yaml.dump(data).encode("utf-8")
 
 
 class Csv(File):
@@ -294,6 +310,10 @@ def file(
     elif format_option is not None:
         raise FormatUnknown(format_option)
 
+    if input_path is not None and output_path is not None and \
+            input_path.suffix.lower() != output_path.suffix.lower():
+        raise DifferentInOutFormats()
+
     if input_path is not None:
         path = input_path
     else:
@@ -301,11 +321,15 @@ def file(
     suffix = path.suffix.lower()
 
     if suffix in Json.file_extensions():
+        logging.debug("type assessed as JSON by file extension")
         return Json(input_path, output_path)
     elif suffix in Yaml.file_extensions():
+        logging.debug("type assessed as YAML by file extension")
         return Yaml(input_path, output_path)
     elif suffix in Csv.file_extensions():
+        logging.debug("type assessed as CSV by file extension")
         return Csv(input_path, output_path)
     elif suffix in Xlsx.file_extensions():
+        logging.debug("type assessed as XLSX by file extension")
         return Xlsx(input_path, output_path)
     raise FormatNotAscertainable(path)
