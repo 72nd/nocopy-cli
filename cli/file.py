@@ -2,7 +2,13 @@
 Everything related to file in- and output.
 """
 
-from abc import ABC, abstractclassmethod, abstractstaticmethod
+from abc import (
+    ABC,
+    abstractmethod,
+    abstractclassmethod,
+    abstractstaticmethod,
+)
+import csv
 import io
 import json
 import logging
@@ -159,15 +165,15 @@ class File(ABC):
         pass
 
     @abstractstaticmethod
-    def parse(raw: bytes) -> Dict[str, Any]:
+    def parse(raw: io.BufferedReader) -> Dict[str, Any]:
         """
         Parses a given file (opened in binary mode) and returns it's structure
         as a dictionary.
         """
         pass
 
-    @abstractstaticmethod
-    def dump(data: Dict[str, Any]) -> bytes:
+    @abstractmethod
+    def dump(self, data: Dict[str, Any]) -> bytes:
         """
         Return a bytes literal of the dumped data structured.
         """
@@ -193,11 +199,10 @@ class Json(File):
         return True
 
     @staticmethod
-    def parse(raw: bytes) -> Dict[str, Any]:
+    def parse(raw: io.BufferedReader) -> Dict[str, Any]:
         return json.load(raw)
 
-    @staticmethod
-    def dump(data: Dict[str, Any]) -> bytes:
+    def dump(self, data: Dict[str, Any]) -> bytes:
         return json.dumps(data).encode("utf-8")
 
 
@@ -220,19 +225,28 @@ class Yaml(File):
         return True
 
     @staticmethod
-    def parse(raw: bytes) -> Dict[str, Any]:
+    def parse(raw: io.BufferedReader) -> Dict[str, Any]:
         return yaml.load(raw, Loader=yaml.FullLoader)
 
-    @staticmethod
-    def dump(data: Dict[str, Any]) -> bytes:
+    def dump(self, data: Dict[str, Any]) -> bytes:
         return yaml.dump(data).encode("utf-8")
 
 
 class Csv(File):
     """CSV implementation for `File`."""
 
-    def __init__(self, *args):
+    only_header: bool = False
+    """Only write the header."""
+    level_nested: bool = False
+    """Level out nested structures."""
+
+    def __init__(self, *args, **kwargs):
         super().__init__(*args)
+
+        if "only_header" in kwargs:
+            self.only_header = kwargs["only_header"]
+        if "level_nested" in kwargs:
+            self.level_nested = kwargs["level_nested"]
 
     @classmethod
     def format_name(cls) -> str:
@@ -247,12 +261,47 @@ class Csv(File):
         return True
 
     @staticmethod
-    def parse(raw: bytes) -> Dict[str, Any]:
-        raise NotImplementedError()
+    def parse(raw: io.BufferedReader) -> Dict[str, Any]:
+        data = csv.DictReader(io.StringIO(raw.read().decode("utf-8")))
+        rsl = []
+        for entry in data:
+            for field in entry:
+                if entry[field] == "":
+                    entry[field] = None
+            rsl.append(entry)
+        return rsl
 
-    @staticmethod
-    def dump(data: Dict[str, Any]) -> bytes:
-        raise NotImplementedError()
+    def dump(self, data: List[Dict[str, Any]]) -> bytes:
+        data = self.__level(data)
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=data[0].keys(),
+            quotechar='"',
+        )
+        writer.writeheader()
+        if not self.only_header:
+            for entry in data:
+                writer.writerow(entry)
+        return buffer.getvalue().encode("utf-8")
+
+    def __level(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not self.level_nested:
+            return data
+        for entry in data:
+            rsl = {}
+            for field in entry:
+                if not isinstance(entry[field], dict):
+                    continue
+                sub_rsl = {}
+                for sub_field in entry[field]:
+                    sub_rsl[f"{field}_{sub_field}"] = entry[field][sub_field]
+                rsl[field] = sub_rsl
+            for r in rsl:
+                del entry[r]
+                entry.update(rsl[r])
+
+        return data
 
 
 class Xlsx(File):
@@ -276,11 +325,10 @@ class Xlsx(File):
         return True
 
     @staticmethod
-    def parse(raw: bytes) -> Dict[str, Any]:
+    def parse(raw: io.BufferedReader) -> Dict[str, Any]:
         raise NotImplementedError()
 
-    @staticmethod
-    def dump(data: Dict[str, Any]) -> bytes:
+    def dump(self, data: Dict[str, Any]) -> bytes:
         raise NotImplementedError()
 
 
@@ -288,6 +336,7 @@ def file(
     format_option: Optional[str] = None,
     input_path: Optional[Path] = None,
     output_path: Optional[Path] = None,
+    **kwargs,
 ) -> File:
     """
     Factory method for `File`.
@@ -299,6 +348,8 @@ def file(
         logging.debug("no format specified fall back to default YAML")
         return Yaml(input_path, output_path)
 
+    if format_option is not None:
+        format_option = format_option.lower()
     if format_option == Json.format_name():
         return Json(input_path, output_path)
     elif format_option == Yaml.format_name():
@@ -328,7 +379,7 @@ def file(
         return Yaml(input_path, output_path)
     elif suffix in Csv.file_extensions():
         logging.debug("type assessed as CSV by file extension")
-        return Csv(input_path, output_path)
+        return Csv(input_path, output_path, **kwargs)
     elif suffix in Xlsx.file_extensions():
         logging.debug("type assessed as XLSX by file extension")
         return Xlsx(input_path, output_path)

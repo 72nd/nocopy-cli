@@ -210,3 +210,12 @@ def table(func):
         help="select the table",
     )(func)
     return func
+
+
+def level(func):
+    func = click.option(
+        "--level",
+        type=bool,
+        is_flag=True,
+    )(func)
+    return func

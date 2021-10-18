@@ -10,13 +10,14 @@ import sys
 from typing import Any, Dict, List, Optional
 
 import click
+from nocopy import Client
+from nocopy.client import build_url
 from pydantic import BaseModel
 from thefuzz import process as fuzz_process
 import yaml
 
-from nocopy import Client
-from nocopy.client import build_url
-from nocopy import cli_options
+from cli.file import file
+from cli import cli_options
 
 
 class Config(BaseModel):
@@ -66,47 +67,14 @@ def __check_get_config(
     return Config.from_file(config_file)
 
 
-def __determine_file_type(
-    file: Optional[Path],
-    format_option: Optional[str]
-) -> str:
-    if format_option is not None:
-        return format_option
-    if file is not None:
-        if file.suffix.lower() == ".json":
-            return "JSON"
-        elif file.suffix.lower() == ".csv":
-            return "CSV"
-        elif file.suffix.lower() == ".yaml" or file.suffix.lower() == ".yml":
-            return "YAML"
-        else:
-            print(f"{file.suffix} is a unknown file type, default to YAML")
-    return "YAML"
-
-
-def __load_csv(input_file: Path) -> Dict[str, Any]:
-    with open(input_file) as f:
-        data = csv.DictReader(f)
-        rsl = []
-        for entry in data:
-            for field in entry:
-                if entry[field] == "":
-                    entry[field] = None
-            rsl.append(entry)
-    return rsl
-
-
 def __load_input(
     input_file: Optional[Path],
     format_option: Optional[str],
+    **kwargs,
 ) -> Dict[str, Any]:
-    format_option = __determine_file_type(input_file, format_option)
-    if format_option == "YAML":
-        return yaml.load(open(input_file))
-    elif format_option == "JSON":
-        return json.load(open(input_file))
-    elif format_option == "CSV":
-        return __load_csv(input_file)
+    f = file(format_option=format_option, input_path=input_file, **kwargs)
+    # TODO: Handle exceptions
+    return f.load()
 
 
 def __get_client(
@@ -122,39 +90,18 @@ def __get_client(
     )
 
 
-def __get_csv(data: Dict[str, Any], only_header: bool = False) -> str:
-    buffer = io.StringIO()
-    writer = csv.DictWriter(
-        buffer,
-        fieldnames=data[0].keys(),
-        quotechar='"',
-    )
-    writer.writeheader()
-    if not only_header:
-        for entry in data:
-            writer.writerow(entry)
-    return buffer.getvalue()
-
-
 def __write_output(
     output_file: Optional[Path],
     format_option: Optional[str],
     data: List[Dict[str, Any]],
-    only_header: bool = False,
+    **kwargs,
 ):
-    format_option = __determine_file_type(output_file, format_option)
-    if format_option == "YAML":
-        rsl = yaml.dump(data)
-    elif format_option == "JSON":
-        rsl = json.dumps(data)
-    elif format_option == "CSV":
-        rsl = __get_csv(data, only_header=only_header)
-
-    if output_file is not None:
-        with open(output_file, "w") as f:
-            f.write(rsl)
-    else:
-        print(rsl)
+    f = file(
+        format_option=format_option,
+        output_path=output_file,
+        **kwargs,
+    )
+    f.save(data)
 
 
 @click.group()
@@ -321,6 +268,7 @@ def init(output_file: Path):
 @cli_options.config
 @cli_options.format
 @cli_options.fuzzy_query
+@cli_options.level
 @cli_options.output
 @cli_options.where
 @cli_options.limit
@@ -340,6 +288,7 @@ def pull(
     fields: Optional[str],
     fields1: Optional[str],
     fuzzy_query: Optional[str],
+    level: bool,
     url: str,
     table: str,
     token: str,
@@ -360,7 +309,7 @@ def pull(
         data = []
         for rsl in fuzz:
             data.append(rsl[0])
-    __write_output(output_file, file_format, data)
+    __write_output(output_file, file_format, data, level_nested=level)
 
 
 @click.command()
@@ -471,7 +420,7 @@ def update(
 ):
     """Update records."""
     client = __get_client(config_file, url, table, token)
-    data = __load_csv(input_file)
+    data = __load_input(input_file, None)
     client.bulk_update(data)
 
 
