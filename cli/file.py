@@ -68,13 +68,19 @@ class File(ABC):
             if not self.supports_std():
                 raise StdInNotSupported(self)
             return self.parse(io.BytesIO(self.__read_stdin()))
-        else:
-            with open(self.input_path, "rb") as file:
-                return self.parse(file)
+
+        with open(self.input_path, "rb") as file:
+            return self.parse(file)
 
     def save(self, data: Dict[str, Any]):
         """Saves/outputs the data to the file/stdout."""
-        raise NotImplementedError
+        if self.output_path is None:
+            if not self.supports_std():
+                raise StdOutNotSupported(self)
+            print(self.dump(data).decode("utf-8"))
+        else:
+            with open(self.output_path, "wb") as file:
+                file.write(self.dump(data))
 
     @staticmethod
     def __read_stdin() -> str:
@@ -141,7 +147,7 @@ class Json(File):
 
     @staticmethod
     def dump(data: Dict[str, Any]) -> bytes:
-        pass
+        return json.dumps(data).encode("utf-8")
 
 
 def file(
