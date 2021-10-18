@@ -5,9 +5,10 @@ Everything related to file in- and output.
 from abc import ABC, abstractclassmethod, abstractstaticmethod
 import io
 import json
+import logging
 from pathlib import Path
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class StdInNotSupported(Exception):
@@ -37,6 +38,28 @@ class StdOutNotSupported(Exception):
         super().__init__(
             f"{file.format_name()} does not support the input of data using "
             "stdout. Please specify a output path."
+        )
+
+
+class FormatUnknown(Exception):
+    """
+    Raised when a unknown format string is given.
+    """
+
+    def __init__(self, value: str):
+        super().__init__(
+            f"{value} is not supported by this application",
+        )
+
+
+class FormatNotAscertainable(Exception):
+    """
+    Raised when the `File` type couldn't be determined for a file path.
+    """
+
+    def __init__(self, file: Path):
+        super().__init__(
+            f"file '{file}' with extension {file.suffix} is not supported"
         )
 
 
@@ -102,6 +125,14 @@ class File(ABC):
         pass
 
     @abstractclassmethod
+    def file_extensions(cls) -> List[str]:
+        """
+        Returns a list of the valid file extensions for this file type with a
+        leading dot.
+        """
+        pass
+
+    @abstractclassmethod
     def supports_std(self) -> bool:
         """
         States whether the data type can be in-/outputted to/from the
@@ -138,6 +169,10 @@ class Json(File):
         return "json"
 
     @classmethod
+    def file_extensions(cls) -> List[str]:
+        return [".json"]
+
+    @classmethod
     def supports_std(self) -> bool:
         return True
 
@@ -150,8 +185,91 @@ class Json(File):
         return json.dumps(data).encode("utf-8")
 
 
+class Yaml(File):
+    """YAML implementation for `File`."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    @classmethod
+    def format_name(cls) -> str:
+        return "yaml"
+
+    @classmethod
+    def file_extensions(cls) -> List[str]:
+        return [".yaml", ".yml"]
+
+    @classmethod
+    def supports_std(self) -> bool:
+        return True
+
+    @staticmethod
+    def parse(raw: bytes) -> Dict[str, Any]:
+        raise NotImplementedError()
+
+    @staticmethod
+    def dump(data: Dict[str, Any]) -> bytes:
+        raise NotImplementedError()
+
+
+class Csv(File):
+    """CSV implementation for `File`."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    @classmethod
+    def format_name(cls) -> str:
+        return "csv"
+
+    @classmethod
+    def file_extensions(cls) -> List[str]:
+        return [".csv"]
+
+    @classmethod
+    def supports_std(self) -> bool:
+        return True
+
+    @staticmethod
+    def parse(raw: bytes) -> Dict[str, Any]:
+        raise NotImplementedError()
+
+    @staticmethod
+    def dump(data: Dict[str, Any]) -> bytes:
+        raise NotImplementedError()
+
+
+class Xlsx(File):
+    """
+    The Office Open XML Workbook implementation for `File`. Used by Excel.
+    """
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    @classmethod
+    def format_name(cls) -> str:
+        return "xlsx"
+
+    @classmethod
+    def file_extensions(cls) -> List[str]:
+        return [".xlsx"]
+
+    @classmethod
+    def supports_std(self) -> bool:
+        return True
+
+    @staticmethod
+    def parse(raw: bytes) -> Dict[str, Any]:
+        raise NotImplementedError()
+
+    @staticmethod
+    def dump(data: Dict[str, Any]) -> bytes:
+        raise NotImplementedError()
+
+
 def file(
-    format_option: str,
+    format_option: Optional[str] = None,
     input_path: Optional[Path] = None,
     output_path: Optional[Path] = None,
 ) -> File:
@@ -161,6 +279,33 @@ def file(
     Returns the appropriate `File` implementation based on the given
     format_option.
     """
+    if format_option is None and input_path is None and output_path is None:
+        logging.debug("no format specified fall back to default YAML")
+        return Yaml(input_path, output_path)
+
     if format_option == Json.format_name():
         return Json(input_path, output_path)
-    raise ValueError(f"{format_option} is not supported by this application")
+    elif format_option == Yaml.format_name():
+        return Yaml(input_path, output_path)
+    elif format_option == Csv.format_name():
+        return Csv(input_path, output_path)
+    elif format_option == Xlsx.format_name():
+        return Xlsx(input_path, output_path)
+    elif format_option is not None:
+        raise FormatUnknown(format_option)
+
+    if input_path is not None:
+        path = input_path
+    else:
+        path = output_path
+    suffix = path.suffix.lower()
+
+    if suffix in Json.file_extensions():
+        return Json(input_path, output_path)
+    elif suffix in Yaml.file_extensions():
+        return Yaml(input_path, output_path)
+    elif suffix in Csv.file_extensions():
+        return Csv(input_path, output_path)
+    elif suffix in Xlsx.file_extensions():
+        return Xlsx(input_path, output_path)
+    raise FormatNotAscertainable(path)
