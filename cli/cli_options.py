@@ -43,7 +43,10 @@ def format(func):
         "-f",
         "--format",
         "file_format",
-        type=click.Choice(["CSV", "JSON", "YAML"], case_sensitive=False),
+        type=click.Choice(
+            ["CSV", "JSON", "YAML", "XLSX"],
+            case_sensitive=False,
+        ),
         help="specify in-/output format",
     )(func)
     return func
@@ -217,5 +220,15 @@ def level(func):
         "--level",
         type=bool,
         is_flag=True,
+        help="level nested data structures into a flat representation",
+    )(func)
+    return func
+
+
+def freeze_at(func):
+    func = click.option(
+        "--freeze-at",
+        type=str,
+        help="set freeze cell for xlsx export",
     )(func)
     return func

@@ -2,6 +2,13 @@
 Everything related to file in- and output.
 """
 
+from openpyxl import Workbook
+from openpyxl.utils.cell import get_column_letter
+from openpyxl.styles import Alignment, Font
+from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.table import Table
+
 from abc import (
     ABC,
     abstractmethod,
@@ -12,6 +19,7 @@ import csv
 import io
 import json
 import logging
+import math
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
@@ -98,14 +106,18 @@ class File(ABC):
     """Optional path to input file."""
     output_path: Optional[Path]
     """Optional path to input file."""
+    level_nested: bool
+    """Level out nested structures."""
 
     def __init__(
         self,
         input_path: Optional[Path],
         output_path: Optional[Path],
+        level_nested: bool,
     ):
         self.input_path = input_path
         self.output_path = output_path
+        self.level_nested = level_nested
 
     def load(self) -> Dict[str, Any]:
         """Load the data in the file and returns the data as a dict."""
@@ -119,6 +131,7 @@ class File(ABC):
 
     def save(self, data: Dict[str, Any]):
         """Saves/outputs the data to the file/stdout."""
+        data = self.__level(data)
         if self.output_path is None:
             if not self.supports_std():
                 raise StdOutNotSupported(self)
@@ -179,6 +192,24 @@ class File(ABC):
         """
         pass
 
+    def __level(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not self.level_nested:
+            return data
+        for entry in data:
+            rsl = {}
+            for field in entry:
+                if not isinstance(entry[field], dict):
+                    continue
+                sub_rsl = {}
+                for sub_field in entry[field]:
+                    sub_rsl[f"{field}_{sub_field}"] = entry[field][sub_field]
+                rsl[field] = sub_rsl
+            for r in rsl:
+                del entry[r]
+                entry.update(rsl[r])
+
+        return data
+
 
 class Json(File):
     """JSON implementation for `File`."""
@@ -237,8 +268,6 @@ class Csv(File):
 
     only_header: bool = False
     """Only write the header."""
-    level_nested: bool = False
-    """Level out nested structures."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
@@ -272,7 +301,6 @@ class Csv(File):
         return rsl
 
     def dump(self, data: List[Dict[str, Any]]) -> bytes:
-        data = self.__level(data)
         buffer = io.StringIO()
         writer = csv.DictWriter(
             buffer,
@@ -285,32 +313,24 @@ class Csv(File):
                 writer.writerow(entry)
         return buffer.getvalue().encode("utf-8")
 
-    def __level(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if not self.level_nested:
-            return data
-        for entry in data:
-            rsl = {}
-            for field in entry:
-                if not isinstance(entry[field], dict):
-                    continue
-                sub_rsl = {}
-                for sub_field in entry[field]:
-                    sub_rsl[f"{field}_{sub_field}"] = entry[field][sub_field]
-                rsl[field] = sub_rsl
-            for r in rsl:
-                del entry[r]
-                entry.update(rsl[r])
-
-        return data
-
 
 class Xlsx(File):
     """
     The Office Open XML Workbook implementation for `File`. Used by Excel.
     """
 
-    def __init__(self, *args):
+    freeze_at: Optional[str] = None
+
+    header_font: Font = Font(
+        name="Arial",
+        bold=True,
+    )
+    header_alignment: Alignment = Alignment()
+
+    def __init__(self, *args, **kwargs):
         super().__init__(*args)
+        if "freeze_at" in kwargs:
+            self.freeze_at = kwargs["freeze_at"]
 
     @classmethod
     def format_name(cls) -> str:
@@ -328,14 +348,110 @@ class Xlsx(File):
     def parse(raw: io.BufferedReader) -> Dict[str, Any]:
         raise NotImplementedError()
 
-    def dump(self, data: Dict[str, Any]) -> bytes:
-        raise NotImplementedError()
+    def dump(self, data: List[Dict[str, Any]]) -> bytes:
+        wb = Workbook()
+        ws = wb.active
+        self.__worksheet_insert_header(ws, data)
+        self.__worksheet_insert_content(ws, data)
+        self.__freeze_cells(ws)
+        self.__apply_apperance(ws, data)
+        self.__data_table(ws, data)
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        return buffer.getvalue()
+
+    def __worksheet_insert_header(
+        self,
+        ws: Worksheet,
+        data: List[Dict[str, Any]],
+    ) -> None:
+        """Sets and formats the header of the Worksheet."""
+        header_row = ws.row_dimensions[1]
+        header_row.font = self.header_font
+        header_row.alignment = self.header_alignment
+        ws.append([name for name in data[0]])
+
+    def __worksheet_insert_content(
+        self,
+        ws: Worksheet,
+        data: List[Dict[str, Any]],
+    ) -> None:
+        """Inserts the actual data into the Worksheet."""
+        for row in data:
+            ws.append([str(cell) for cell in row.values()])
+
+    def __freeze_cells(self, ws: Worksheet) -> None:
+        """Freezes the cell at the given cell from the config."""
+        if self.freeze_at is not None:
+            ws.freeze_panes = ws[self.freeze_at]
+
+    def __apply_apperance(
+        self,
+        ws: Worksheet,
+        data: List[Dict[str, Any]],
+    ) -> None:
+        widths = self.__calc_column_widths(data)
+        for col in range(1, ws.max_column+1):
+            column_letter = get_column_letter(col)
+            column = ws.column_dimensions[column_letter]
+            column.width = widths[col-1]
+            if widths[col-1] == 80:
+                column.alignment = Alignment(wrap_text=True, shrink_to_fit=True)
+
+    def __data_table(
+        self,
+        ws: Worksheet,
+        data: List[Dict[str, Any]],
+    ) -> None:
+        """Configures the data table."""
+        table = Table(
+            displayName="Table",
+            ref=self.__dimensions(data)
+        )
+        ws.add_table(table)
+
+    @staticmethod
+    def __calc_column_widths(data: List[Dict[str, Any]]) -> None:
+        """Calculates an approximative width for each column."""
+        widths_per_key: Dict[str, int] = {}
+        keys = [key for key in data[0]]
+        for key in keys:
+            widths_per_key[key] = 0
+
+        for entry in data:
+            entry_dict = entry
+            for key in keys:
+                if not isinstance(entry_dict[key], str):
+                    continue
+                if (length := len(entry_dict[key])) > widths_per_key[key]:
+                    widths_per_key[key] = length
+        rsl: List[int] = []
+        for value in widths_per_key.values():
+            width = math.ceil(value*0.93)
+            if width > 80:
+                rsl.append(80)
+            elif width > 5:
+                rsl.append(width)
+            else:
+                rsl.append(5)
+        return rsl
+
+    @staticmethod
+    def __dimensions(data: List[Dict[str, Any]]) -> None:
+        """Returns the dimension of the used space."""
+        return "A1:{col}{row}".format(
+            col=get_column_letter(
+                len(data[0])),
+            row=len(data) + 1,
+        )
 
 
 def file(
     format_option: Optional[str] = None,
     input_path: Optional[Path] = None,
     output_path: Optional[Path] = None,
+    level_nested: bool = False,
     **kwargs,
 ) -> File:
     """
@@ -351,13 +467,13 @@ def file(
     if format_option is not None:
         format_option = format_option.lower()
     if format_option == Json.format_name():
-        return Json(input_path, output_path)
+        return Json(input_path, output_path, level_nested)
     elif format_option == Yaml.format_name():
-        return Yaml(input_path, output_path)
+        return Yaml(input_path, output_path, level_nested)
     elif format_option == Csv.format_name():
-        return Csv(input_path, output_path)
+        return Csv(input_path, output_path, level_nested)
     elif format_option == Xlsx.format_name():
-        return Xlsx(input_path, output_path)
+        return Xlsx(input_path, output_path, level_nested, **kwargs)
     elif format_option is not None:
         raise FormatUnknown(format_option)
 
@@ -373,14 +489,14 @@ def file(
 
     if suffix in Json.file_extensions():
         logging.debug("type assessed as JSON by file extension")
-        return Json(input_path, output_path)
+        return Json(input_path, output_path, level_nested)
     elif suffix in Yaml.file_extensions():
         logging.debug("type assessed as YAML by file extension")
-        return Yaml(input_path, output_path)
+        return Yaml(input_path, output_path, level_nested)
     elif suffix in Csv.file_extensions():
         logging.debug("type assessed as CSV by file extension")
-        return Csv(input_path, output_path, **kwargs)
+        return Csv(input_path, output_path, level_nested)
     elif suffix in Xlsx.file_extensions():
         logging.debug("type assessed as XLSX by file extension")
-        return Xlsx(input_path, output_path)
+        return Xlsx(input_path, output_path, level_nested, **kwargs)
     raise FormatNotAscertainable(path)

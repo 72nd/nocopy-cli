@@ -2,9 +2,6 @@
 Nocopy CLI application.
 """
 
-import csv
-import io
-import json
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
@@ -14,7 +11,6 @@ from nocopy import Client
 from nocopy.client import build_url
 from pydantic import BaseModel
 from thefuzz import process as fuzz_process
-import yaml
 
 from cli.file import file
 from cli import cli_options
@@ -268,7 +264,6 @@ def init(output_file: Path):
 @cli_options.config
 @cli_options.format
 @cli_options.fuzzy_query
-@cli_options.level
 @cli_options.output
 @cli_options.where
 @cli_options.limit
@@ -277,6 +272,8 @@ def init(output_file: Path):
 @cli_options.fields
 @cli_options.fields1
 @cli_options.table
+@cli_options.level
+@cli_options.freeze_at
 def pull(
     config_file: Path,
     file_format: Optional[str],
@@ -288,10 +285,11 @@ def pull(
     fields: Optional[str],
     fields1: Optional[str],
     fuzzy_query: Optional[str],
-    level: bool,
     url: str,
     table: str,
     token: str,
+    level: bool,
+    freeze_at: Optional[str],
 ):
     """Pull the records from a NocoDB instance."""
     client = __get_client(config_file, url, table, token)
@@ -309,7 +307,13 @@ def pull(
         data = []
         for rsl in fuzz:
             data.append(rsl[0])
-    __write_output(output_file, file_format, data, level_nested=level)
+    __write_output(
+        output_file,
+        file_format,
+        data,
+        level_nested=level,
+        freeze_at=freeze_at,
+    )
 
 
 @click.command()
