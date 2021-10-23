@@ -462,7 +462,7 @@ def file(
     """
     if format_option is None and input_path is None and output_path is None:
         logging.debug("no format specified fall back to default YAML")
-        return Yaml(input_path, output_path)
+        return Yaml(input_path, output_path, level_nested)
 
     if format_option is not None:
         format_option = format_option.lower()
