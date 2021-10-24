@@ -439,6 +439,11 @@ class Xlsx(File):
         for key in keys:
             widths_per_key[key] = 0
 
+        header_data = data[0]
+        for key in keys:
+            header_data[key] = key
+        data.append(header_data)
+
         for entry in data:
             entry_dict = entry
             for key in keys:
