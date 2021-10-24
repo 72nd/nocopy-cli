@@ -3,8 +3,10 @@ Everything related to file in- and output.
 """
 
 from openpyxl import Workbook
+from openpyxl.formatting.rule import Rule
 from openpyxl.utils.cell import get_column_letter
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table
@@ -336,6 +338,7 @@ class Xlsx(File):
         vertical=side,
         horizontal=side,
     )
+    alternating_row_color: str = "00C0C0C0"
 
 
     def __init__(self, *args, **kwargs):
@@ -366,6 +369,7 @@ class Xlsx(File):
         self.__worksheet_insert_content(ws, data)
         self.__freeze_cells(ws)
         self.__apply_apperance(ws, data)
+        self.__apply_conditional(ws, data)
         self.__data_table(ws, data)
 
         buffer = io.BytesIO()
@@ -427,6 +431,24 @@ class Xlsx(File):
                 )
             column.alignment = Alignment(vertical="center")
             column.border = self.border
+
+    def __apply_conditional(
+        self,
+        ws: Worksheet,
+        data: List[Dict[str, Any]],
+    ) -> None:
+        alternating_fill = fill=PatternFill(
+            "solid",
+            fgColor=self.alternating_row_color,
+        )
+        alternating_style = DifferentialStyle(fill=alternating_fill)
+        alternating_rule = Rule(
+            type="cellIs",
+            dxf=alternating_style,
+            formula=["False"],
+        )
+        ws.conditional_formatting.add("A1:AB48", alternating_rule)
+
     def __data_table(
         self,
         ws: Worksheet,
