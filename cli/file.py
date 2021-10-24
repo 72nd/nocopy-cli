@@ -362,6 +362,16 @@ class Xlsx(File):
         wb.save(buffer)
         return buffer.getvalue()
 
+    @staticmethod
+    def __longest_data_entry(
+        data: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        longest = 0
+        for i in range(0, len(data)):
+            if len(data[i]) > len(data[longest]):
+                longest = i
+        return data[longest]
+
     def __worksheet_insert_header(
         self,
         ws: Worksheet,
@@ -371,7 +381,7 @@ class Xlsx(File):
         header_row = ws.row_dimensions[1]
         header_row.font = self.header_font
         header_row.alignment = self.header_alignment
-        ws.append([name for name in data[0]])
+        ws.append([name for name in self.__longest_data_entry(data)])
 
     def __worksheet_insert_content(
         self,
@@ -418,16 +428,12 @@ class Xlsx(File):
         )
         ws.add_table(table)
 
-    @staticmethod
     def __calc_column_widths(
+        self,
         data: List[Dict[str, Any]],
     ) -> None:
         """Calculates an approximative width for each column."""
-        longest = 0
-        for i in range(0, len(data)):
-            if len(data[i]) > len(data[longest]):
-                longest = i
-        keys = [key for key in data[longest]]
+        keys = [key for key in self.__longest_data_entry(data)]
 
         widths_per_key: Dict[str, int] = {}
         for key in keys:
