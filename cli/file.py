@@ -408,7 +408,12 @@ class Xlsx(File):
             column = ws.column_dimensions[column_letter]
             column.width = widths[col-1]
             if widths[col-1] == 80:
-                column.alignment = Alignment(wrap_text=True, shrink_to_fit=True)
+                column.alignment = Alignment(
+                    vertical="center",
+                    wrap_text=True,
+                    shrink_to_fit=True,
+                )
+            column.alignment = Alignment(vertical="center")
             column.border = Border(
                 left=self.side,
                 right=self.side,
