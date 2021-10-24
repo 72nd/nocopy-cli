@@ -3,9 +3,16 @@ Everything related to file in- and output.
 """
 
 from openpyxl import Workbook
-from openpyxl.formatting.rule import Rule
+from openpyxl.formatting.rule import FormulaRule
 from openpyxl.utils.cell import get_column_letter
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import (
+    Alignment,
+    Border,
+    Font,
+    NamedStyle,
+    PatternFill,
+    Side,
+)
 from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -322,23 +329,24 @@ class Xlsx(File):
     """
 
     freeze_at: Optional[str] = None
-
-    header_fill: PatternFill = PatternFill("solid", fgColor="00A9A9A9")
+    """Defines the cell where the table should be freezed at."""
+    header_color = "00A9A9A9"
+    """Defines the background color of the header row."""
     header_font: Font = Font(
-        name="Arial",
+        name="Calibri",
         bold=True,
     )
-    header_alignment: Alignment = Alignment()
-    side: Side = Side(border_style="thin", color="000000")
-    border: Border = Border(
-        left=side,
-        right=side,
-        top=side,
-        bottom=side,
-        vertical=side,
-        horizontal=side,
+    font: Font = Font(
+        name="Calibri",
+        size=10,
     )
-    alternating_row_color: str = "00C0C0C0"
+    """Font format for the header row."""
+    side: Side = Side(border_style="thin", color="000000")
+    """Line style of the cells."""
+    alternating_row_color: str = "00D3D3D3"
+    """Background of the alternating rows."""
+
+    __longest_entry_temp: Optional[Dict[str, Any]] = None
 
 
     def __init__(self, *args, **kwargs):
@@ -368,23 +376,13 @@ class Xlsx(File):
         self.__worksheet_insert_header(ws, data)
         self.__worksheet_insert_content(ws, data)
         self.__freeze_cells(ws)
-        self.__apply_apperance(ws, data)
+        self.__apply_apperance(wb, ws, data)
         self.__apply_conditional(ws, data)
-        self.__data_table(ws, data)
+        self.__apply_data_table(ws, data)
 
         buffer = io.BytesIO()
         wb.save(buffer)
         return buffer.getvalue()
-
-    @staticmethod
-    def __longest_data_entry(
-        data: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        longest = 0
-        for i in range(0, len(data)):
-            if len(data[i]) > len(data[longest]):
-                longest = i
-        return data[longest]
 
     def __worksheet_insert_header(
         self,
@@ -393,10 +391,6 @@ class Xlsx(File):
     ) -> None:
         """Sets and formats the header of the Worksheet."""
         header_row = ws.row_dimensions[1]
-        header_row.fill = self.header_fill
-        header_row.font = self.header_font
-        header_row.alignment = self.header_alignment
-        header_row.border = self.border
         ws.append([name for name in self.__longest_data_entry(data)])
 
     def __worksheet_insert_content(
@@ -415,9 +409,29 @@ class Xlsx(File):
 
     def __apply_apperance(
         self,
+        wb: Workbook,
         ws: Worksheet,
         data: List[Dict[str, Any]],
     ) -> None:
+        border = Border(
+            left=self.side,
+            right=self.side,
+            top=self.side,
+            bottom=self.side,
+            vertical=self.side,
+            horizontal=self.side,
+        )
+        header_style = NamedStyle(name="Header")
+        header_style.alignment = Alignment(vertical="center")
+        header_style.border = border
+        header_style.fill = PatternFill("solid", fgColor=self.header_color)
+        header_style.font = self.header_font
+
+        default_style = NamedStyle(name="Default")
+        default_style.alignment = Alignment(vertical="center")
+        default_style.border = border
+        default_style.font = self.font
+
         widths = self.__calc_column_widths(data)
         for col in range(1, ws.max_column+1):
             column_letter = get_column_letter(col)
@@ -429,8 +443,12 @@ class Xlsx(File):
                     wrap_text=True,
                     shrink_to_fit=True,
                 )
-            column.alignment = Alignment(vertical="center")
-            column.border = self.border
+            for row in range(1, len(data)+1):
+                if row == 1:
+                    style = header_style
+                else:
+                    style = default_style
+                ws[f"{column_letter}{row}"].style = style
 
     def __apply_conditional(
         self,
@@ -439,17 +457,19 @@ class Xlsx(File):
     ) -> None:
         alternating_fill = fill=PatternFill(
             "solid",
-            fgColor=self.alternating_row_color,
+            bgColor=self.alternating_row_color,
         )
         alternating_style = DifferentialStyle(fill=alternating_fill)
-        alternating_rule = Rule(
-            type="cellIs",
-            dxf=alternating_style,
-            formula=["False"],
+        alternating_rule = FormulaRule(
+            fill=alternating_fill,
+            formula=["ISODD(ROW())"],
         )
-        ws.conditional_formatting.add("A1:AB48", alternating_rule)
+        ws.conditional_formatting.add(
+            f"A2:{self.__max_cell(data)}",
+            alternating_rule,
+        )
 
-    def __data_table(
+    def __apply_data_table(
         self,
         ws: Worksheet,
         data: List[Dict[str, Any]],
@@ -460,6 +480,19 @@ class Xlsx(File):
             ref=self.__dimensions(data)
         )
         ws.add_table(table)
+
+    def __longest_data_entry(
+        self,
+        data: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if self.__longest_entry_temp is not None:
+            return self.__longest_entry_temp
+        longest = 0
+        for i in range(0, len(data)):
+            if len(data[i]) > len(data[longest]):
+                longest = i
+        self.__longest_entry_temp = data[longest]
+        return data[longest]
 
     def __calc_column_widths(
         self,
@@ -495,14 +528,15 @@ class Xlsx(File):
                 rsl.append(5)
         return rsl
 
-    @staticmethod
-    def __dimensions(data: List[Dict[str, Any]]) -> None:
+    def __max_cell(self, data: List[Dict[str, Any]]) -> None:
+        """Returns the coordinate of the most outer cell."""
+        column = get_column_letter(len(self.__longest_data_entry(data)))
+        row = len(data)
+        return f"{column}{row}"
+
+    def __dimensions(self, data: List[Dict[str, Any]]) -> None:
         """Returns the dimension of the used space."""
-        return "A1:{col}{row}".format(
-            col=get_column_letter(
-                len(data[0])),
-            row=len(data) + 1,
-        )
+        return f"A1:{self.__max_cell(data)}"
 
 
 def file(
