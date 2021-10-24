@@ -4,7 +4,7 @@ Everything related to file in- and output.
 
 from openpyxl import Workbook
 from openpyxl.utils.cell import get_column_letter
-from openpyxl.styles import Alignment, Font
+from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table
@@ -326,6 +326,7 @@ class Xlsx(File):
         bold=True,
     )
     header_alignment: Alignment = Alignment()
+    side: Side = Side(border_style="thin", color="000000")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
@@ -398,6 +399,12 @@ class Xlsx(File):
             column.width = widths[col-1]
             if widths[col-1] == 80:
                 column.alignment = Alignment(wrap_text=True, shrink_to_fit=True)
+            column.border = Border(
+                left=self.side,
+                right=self.side,
+                top=self.side,
+                bottom=self.side,
+            )
 
     def __data_table(
         self,
@@ -412,17 +419,24 @@ class Xlsx(File):
         ws.add_table(table)
 
     @staticmethod
-    def __calc_column_widths(data: List[Dict[str, Any]]) -> None:
+    def __calc_column_widths(
+        data: List[Dict[str, Any]],
+    ) -> None:
         """Calculates an approximative width for each column."""
+        longest = 0
+        for i in range(0, len(data)):
+            if len(data[i]) > len(data[longest]):
+                longest = i
+        keys = [key for key in data[longest]]
+
         widths_per_key: Dict[str, int] = {}
-        keys = [key for key in data[0]]
         for key in keys:
             widths_per_key[key] = 0
 
         for entry in data:
             entry_dict = entry
             for key in keys:
-                if not isinstance(entry_dict[key], str):
+                if key not in entry_dict or not isinstance(entry_dict[key], str):
                     continue
                 if (length := len(entry_dict[key])) > widths_per_key[key]:
                     widths_per_key[key] = length
