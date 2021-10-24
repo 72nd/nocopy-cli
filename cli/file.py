@@ -4,7 +4,7 @@ Everything related to file in- and output.
 
 from openpyxl import Workbook
 from openpyxl.utils.cell import get_column_letter
-from openpyxl.styles import Alignment, Border, Font, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table
@@ -321,12 +321,22 @@ class Xlsx(File):
 
     freeze_at: Optional[str] = None
 
+    header_fill: PatternFill = PatternFill("solid", fgColor="00A9A9A9")
     header_font: Font = Font(
         name="Arial",
         bold=True,
     )
     header_alignment: Alignment = Alignment()
     side: Side = Side(border_style="thin", color="000000")
+    border: Border = Border(
+        left=side,
+        right=side,
+        top=side,
+        bottom=side,
+        vertical=side,
+        horizontal=side,
+    )
+
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
@@ -379,8 +389,10 @@ class Xlsx(File):
     ) -> None:
         """Sets and formats the header of the Worksheet."""
         header_row = ws.row_dimensions[1]
+        header_row.fill = self.header_fill
         header_row.font = self.header_font
         header_row.alignment = self.header_alignment
+        header_row.border = self.border
         ws.append([name for name in self.__longest_data_entry(data)])
 
     def __worksheet_insert_content(
@@ -414,13 +426,7 @@ class Xlsx(File):
                     shrink_to_fit=True,
                 )
             column.alignment = Alignment(vertical="center")
-            column.border = Border(
-                left=self.side,
-                right=self.side,
-                top=self.side,
-                bottom=self.side,
-            )
-
+            column.border = self.border
     def __data_table(
         self,
         ws: Worksheet,
