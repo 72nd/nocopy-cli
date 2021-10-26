@@ -454,6 +454,12 @@ def update_field(
     if user != "Y":
         print("aborting...")
         sys.exit(0)
+    if value.lower() == "none":
+        user = input(
+            "Do you want to set the field to the 'None' type instead of str (Y/n): "
+        )
+        if user == "Y":
+            value = None
     with click.progressbar(
         records,
         label=f"update field {field}",
