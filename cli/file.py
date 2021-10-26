@@ -330,7 +330,7 @@ class Xlsx(File):
 
     freeze_at: Optional[str] = None
     """Defines the cell where the table should be freezed at."""
-    header_color = "00A9A9A9"
+    header_color = "00C0C0C0"
     """Defines the background color of the header row."""
     header_font: Font = Font(
         name="Calibri",
