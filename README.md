@@ -44,13 +44,15 @@ nocopy init -o config.json
 
 A number of nocopy-cli's operation consist of reading or writing from/to a file. Currently [YAML](https://en.wikipedia.org/wiki/YAML), [CSV](https://en.wikipedia.org/wiki/Comma-separated_values) and [JSON](https://en.wikipedia.org/wiki/JSON) are supported ether as file (defined using the `-i/--input` respective `-o/--output` flags) as well as piping the data per stdin/stdout. The application tries to determine the format based on the file extension. Otherwise YAML will be used. Use the `-f/--format` flag to specify the format.
 
+In addition data can be saved as Excel's xlsx format. The import of such files is currently not implemented. Use the CSV export of your spreadsheet software to create a applicable input file.
+
 
 ## Usage
 
 For the examples we assume our database contains the table `persons` with the following schema:
 
 ```
-id			integer		<- Given by NocoDB
+id		integer		<- Given by NocoDB
 nullable 	false		<- "
 readOnly 	true		<- "
 name		string
@@ -58,7 +60,7 @@ created_at	string
 updated_at	string
 email		string
 gender		string
-age			integer
+age		integer
 cars		integer		<- Foreign key to 'cars' table
 color		string
 ```
