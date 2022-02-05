@@ -27,9 +27,11 @@ setuptools.setup(
     """,
     install_requires=[
         "click==8.0.1",
+        "jinja2==3.0.3",
         "pyyaml==5.4.1",
         "python-Levenshtein==0.12.1",
-        "nocopy==0.1.0",
+        "nocopy==0.1.5",
+        "openpyxl==3.0.9",
         "thefuzz==0.19.0",
     ]
 )

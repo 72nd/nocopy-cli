@@ -7,6 +7,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 import click
+import jinja2
 from nocopy import Client
 from nocopy.client import build_url
 from pydantic import BaseModel
@@ -227,6 +228,50 @@ def find_first(
         fields=fields,
     )
     __write_output(output_file, file_format, data)
+
+
+@click.command()
+@cli_options.config
+@cli_options.input
+@cli_options.fuzzy_query
+@cli_options.output
+@cli_options.where
+@cli_options.limit
+@cli_options.offset
+@cli_options.sort
+@cli_options.fields
+@cli_options.fields1
+@cli_options.table
+def jinja(
+    config_file: Path,
+    input_file: Path,
+    output_file: Path,
+    where: Optional[str],
+    limit: Optional[int],
+    offset: Optional[int],
+    sort: Optional[str],
+    fields: Optional[str],
+    fields1: Optional[str],
+    fuzzy_query: Optional[str],
+    url: str,
+    table: str,
+    token: str,
+):
+    """Apply the data to a Jinja2 template file."""
+    client = __get_client(config_file, url, table, token)
+    data = client.list(
+        where=where,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        fields=fields,
+        fields1=fields1,
+        as_dict=True,
+    )
+    enviroment = jinja2.Environment(loader=jinja2.FileSystemLoader(searchpath=input_file.parent))
+    template = enviroment.get_template(input_file.name)
+    with open(output_file, "w") as f:
+        f.write(template.render(data=data))
 
 
 @click.command()
@@ -474,6 +519,7 @@ cli.add_command(count)
 cli.add_command(group_by)
 cli.add_command(find_first)
 cli.add_command(init)
+cli.add_command(jinja)
 cli.add_command(push)
 cli.add_command(pull)
 cli.add_command(purge)
